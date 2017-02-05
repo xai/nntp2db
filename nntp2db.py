@@ -15,6 +15,7 @@ import traceback
 
 status = '0 %'
 attempts = 2  # number of attempts in case of temporary error
+aggressive = False
 
 db = pymysql.connect(host="localhost",
                      user="lists",
@@ -39,8 +40,9 @@ def list_groups():
     nntpconn.quit()
 
 
-def contains(groupid, msgid):
-    if cur.execute('SELECT `id` FROM `mails` WHERE `message_id`=%s', (msgid,)) > 0:
+def contains(listid, msgid):
+    if cur.execute('SELECT b.id FROM mboxes b, mails m WHERE b.id=%s and m.id=b.id and m.message_id=%s',
+                   (listid, msgid,)) > 0:
         return cur.fetchone()[0]
     else:
         return None
@@ -66,7 +68,7 @@ def stat(nntpconn, msgno):
     return number, msgid
 
 
-def get(nntpconn, msgno, aggressive):
+def get(nntpconn, msgno):
     for attempt in range(attempts):
         try:
             resp, info = nntpconn.article(str(msgno))
@@ -90,7 +92,7 @@ def get(nntpconn, msgno, aggressive):
     return(info.number, info.message_id, email.message_from_string(text))
 
 
-def check(groupid, nntpconn, msgno, update):
+def check(listid, nntpconn, msgno, update):
 
     if update:
         number, msgid = stat(nntpconn, msgno)
@@ -98,7 +100,7 @@ def check(groupid, nntpconn, msgno, update):
         number = msgno
         msgid = 'unknown msg-id'
 
-    if not update or not contains(groupid, msgid):
+    if not update or not contains(listid, msgid):
         queue = True
         action = 'QUEUE'
     else:
@@ -132,8 +134,8 @@ def lookup_type(name):
     return typeid
 
 
-def store(groupid, nntpconn, msgno, aggressive):
-    number, msgid, msg = get(nntpconn, msgno, aggressive)
+def store(listid, nntpconn, msgno):
+    number, msgid, msg = get(nntpconn, msgno)
     msgid = msg.get('Message-Id')
     date = msg.get('Date')
     subject = msg.get('Subject')
@@ -163,6 +165,9 @@ def store(groupid, nntpconn, msgno, aggressive):
         cur.execute('INSERT INTO `recipients` (`mail`, `recipient`, `type`) VALUES (%s,%s,%s)',
                    (mailid, ccid, cctypeid))
 
+    cur.execute('INSERT INTO `mboxes` (`list`, `mail`) VALUES (%s, %s)',
+               (listid, mailid))
+
     action = 'STORE'
 
     log('mbox', action, number, msgno, msgid)
@@ -170,20 +175,20 @@ def store(groupid, nntpconn, msgno, aggressive):
 
 def initialize_list(group):
     cur.execute("SELECT `id` FROM `lists` WHERE `name` = %s", (group,))
-    groupid = cur.fetchone()
+    listid = cur.fetchone()
 
-    if not groupid:
+    if not listid:
         cur.execute("INSERT INTO `lists` (`name`) VALUES (%s)", (group,))
-        groupid = cur.lastrowid
+        listid = cur.lastrowid
 
-    return groupid
+    return listid
 
 
-def download(group, aggressive, dry_run, number=None, start=None, update=None):
+def download(group, dry_run, number=None, start=None, update=None):
     """
     The default behavior is to pause 30 seconds every 1000 messages while
     downloading to reduce the load on the load on the gmane servers.
-    This can be skipped by supplying the aggressive flag.
+    This can be skipped by setting the global aggressive flag.
 
     If the update argument is supplied, only new messages (i.e., msgid not in
     mbox) will be added to the mbox.
@@ -192,7 +197,7 @@ def download(group, aggressive, dry_run, number=None, start=None, update=None):
     global status
 
     if not dry_run:
-        groupid = initialize_list(group)
+        listid = initialize_list(group)
 
     nntpconn = nntplib.NNTP('news.gmane.org')
 
@@ -236,7 +241,7 @@ def download(group, aggressive, dry_run, number=None, start=None, update=None):
 
             status = str(int(100 * (last - msgno) / (last - startnr))) + ' %'
 
-            if check(groupid, nntpconn, msgno, update):
+            if check(listid, nntpconn, msgno, update):
                 stack.append(msgno)
             else:
                 print('Found a message that is already in the mbox.')
@@ -257,12 +262,13 @@ def download(group, aggressive, dry_run, number=None, start=None, update=None):
         status = str(int(100 * count / length)) + ' %'
         msgno = stack.pop()
 
-        store(groupid, nntpconn, msgno, aggressive)
+        store(listid, nntpconn, msgno)
 
     nntpconn.quit()
 
 
 def main():
+    global aggressive
     parser = argparse.ArgumentParser()
     parser.add_argument("-a",
                         "--aggressive",
@@ -295,10 +301,11 @@ def main():
         list_groups()
         return
 
+    aggressive = args.aggressive
+
     for group in args.groups:
         try:
             download(group,
-                     args.aggressive,
                      args.dry_run,
                      args.number,
                      args.start,
