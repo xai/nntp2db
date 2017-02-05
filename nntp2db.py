@@ -11,8 +11,6 @@ import nntplib
 import time
 import pymysql
 import traceback
-from email.utils import parseaddr
-from email.utils import getaddresses
 
 
 status = '0 %'
