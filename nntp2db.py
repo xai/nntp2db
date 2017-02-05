@@ -41,7 +41,7 @@ def list_groups():
 
 
 def contains(listid, msgid):
-    if cur.execute('SELECT b.id FROM mboxes b, mails m WHERE b.id=%s and m.id=b.id and m.message_id=%s',
+    if cur.execute('SELECT b.id FROM mbox b, mail m WHERE b.id=%s and m.id=b.id and m.message_id=%s',
                    (listid, msgid,)) > 0:
         return cur.fetchone()[0]
     else:
@@ -112,26 +112,14 @@ def check(listid, nntpconn, msgno, update):
 
 
 def lookup_person(name, address):
-    if cur.execute('SELECT `id` from `persons` where `name` = %s and `address` = %s', (name, address)) > 0:
+    if cur.execute('SELECT `id` from `person` where `name` = %s and `address` = %s', (name, address)) > 0:
         personid = int(cur.fetchone()[0])
     else:
-        cur.execute('INSERT INTO `persons` (`name`, `address`) VALUES (%s,%s)',
+        cur.execute('INSERT INTO `person` (`name`, `address`) VALUES (%s,%s)',
                     (name, address))
         personid = int(cur.lastrowid)
 
     return personid
-
-
-def lookup_type(name):
-    if cur.execute('SELECT id from recipient_types where name = %s',
-                   (name)) > 0:
-        typeid = cur.fetchone()[0]
-    else:
-        cur.execute('INSERT INTO recipient_types (`name`) VALUES (%s)',
-                    (name,))
-        typeid = cur.lastrowid
-
-    return typeid
 
 
 def store(listid, nntpconn, msgno):
@@ -144,7 +132,7 @@ def store(listid, nntpconn, msgno):
     sender = email.utils.parseaddr(msg.get('From'))
     senderid = lookup_person(*sender)
 
-    cur.execute('INSERT INTO `mails` (`message_id`, `subject`, `date`, `from`, `lines`, `content`) VALUES (%s,%s,%s,%s,%s,%s)',
+    cur.execute('INSERT INTO `mail` (`message_id`, `subject`, `date`, `from`, `lines`, `content`) VALUES (%s,%s,%s,%s,%s,%s)',
                 (msgid, subject, date, senderid, lines, msg.as_string()))
     mailid = cur.lastrowid
 
@@ -152,20 +140,17 @@ def store(listid, nntpconn, msgno):
     tos = msg.get_all('to', [])
     ccs = msg.get_all('cc', [])
 
-    totypeid = lookup_type('to')
-    cctypeid = lookup_type('cc')
-
     for to in email.utils.getaddresses(tos):
         toid = lookup_person(*to)
-        cur.execute('INSERT INTO `recipients` (`mail`, `recipient`, `type`) VALUES (%s,%s,%s)',
-                   (mailid, toid, totypeid))
+        cur.execute('INSERT INTO `recipient` (`mail`, `recipient`, `to`, `cc`) VALUES (%s,%s,%s,%s)',
+                   (mailid, toid, 1, 0))
 
     for cc in email.utils.getaddresses(ccs):
         ccid = lookup_person(*cc)
-        cur.execute('INSERT INTO `recipients` (`mail`, `recipient`, `type`) VALUES (%s,%s,%s)',
-                   (mailid, ccid, cctypeid))
+        cur.execute('INSERT INTO `recipient` (`mail`, `recipient`, `to`, `cc`) VALUES (%s,%s,%s,%s)',
+                   (mailid, ccid, 0, 1))
 
-    cur.execute('INSERT INTO `mboxes` (`list`, `mail`) VALUES (%s, %s)',
+    cur.execute('INSERT INTO `mbox` (`list`, `mail`) VALUES (%s, %s)',
                (listid, mailid))
 
     action = 'STORE'
@@ -174,11 +159,11 @@ def store(listid, nntpconn, msgno):
 
 
 def initialize_list(group):
-    cur.execute("SELECT `id` FROM `lists` WHERE `name` = %s", (group,))
+    cur.execute("SELECT `id` FROM `list` WHERE `name` = %s", (group,))
     listid = cur.fetchone()
 
     if not listid:
-        cur.execute("INSERT INTO `lists` (`name`) VALUES (%s)", (group,))
+        cur.execute("INSERT INTO `list` (`name`) VALUES (%s)", (group,))
         listid = cur.lastrowid
 
     return listid
@@ -262,7 +247,10 @@ def download(group, dry_run, number=None, start=None, update=None):
         status = str(int(100 * count / length)) + ' %'
         msgno = stack.pop()
 
-        store(listid, nntpconn, msgno)
+        try:
+            store(listid, nntpconn, msgno)
+        except:
+            pass
 
     nntpconn.quit()
 
