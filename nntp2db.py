@@ -140,32 +140,39 @@ def store(listid, nntpconn, msgno):
     subject = msg.get('Subject')
     lines = msg.get('Lines')
 
-    sender = email.utils.parseaddr(msg.get('From'))
-    senderid = lookup_person(*sender)
-    sql = ('INSERT INTO `mail` '
-           '(`message_id`, `subject`, `date`, `from`, `lines`, '
-           '`content`) '
-           'VALUES (%s, %s, %s, %s, %s, %s)')
-    cur.execute(sql, (msgid, subject, date, senderid, lines, msg.as_string()))
-    mailid = cur.lastrowid
+    sql = ('SELECT `id` from `mail` '
+           'WHERE `message_id`=%s')
 
-    # these contain lists  of realname, addr tuples
-    tos = msg.get_all('to', [])
-    ccs = msg.get_all('cc', [])
+    if cur.execute(sql, (msgid,)) > 0:
+        mailid = cur.fetchone()[0]
+    else:
+        sender = email.utils.parseaddr(msg.get('From'))
+        senderid = lookup_person(*sender)
+        sql = ('INSERT INTO `mail` '
+               '(`message_id`, `subject`, `date`, `from`, `lines`, '
+               '`content`) '
+               'VALUES (%s, %s, %s, %s, %s, %s)')
+        cur.execute(sql, (msgid, subject, date, senderid, lines,
+                          msg.as_string()))
+        mailid = cur.lastrowid
 
-    for to in email.utils.getaddresses(tos):
-        toid = lookup_person(*to)
-        sql = ('INSERT INTO `recipient` '
-               '(`mail`, `recipient`, `to`, `cc`) '
-               'VALUES (%s, %s, %s, %s)')
-        cur.execute(sql, (mailid, toid, 1, 0))
+        # these contain lists  of realname, addr tuples
+        tos = msg.get_all('to', [])
+        ccs = msg.get_all('cc', [])
 
-    for cc in email.utils.getaddresses(ccs):
-        ccid = lookup_person(*cc)
-        sql = ('INSERT INTO `recipient` '
-               '(`mail`, `recipient`, `to`, `cc`) '
-               'VALUES (%s, %s, %s, %s)')
-        cur.execute(sql, (mailid, ccid, 0, 1))
+        for to in email.utils.getaddresses(tos):
+            toid = lookup_person(*to)
+            sql = ('INSERT INTO `recipient` '
+                   '(`mail`, `recipient`, `to`, `cc`) '
+                   'VALUES (%s, %s, %s, %s)')
+            cur.execute(sql, (mailid, toid, 1, 0))
+
+        for cc in email.utils.getaddresses(ccs):
+            ccid = lookup_person(*cc)
+            sql = ('INSERT INTO `recipient` '
+                   '(`mail`, `recipient`, `to`, `cc`) '
+                   'VALUES (%s, %s, %s, %s)')
+            cur.execute(sql, (mailid, ccid, 0, 1))
 
     sql = ('INSERT INTO `mbox` '
            '(`list`, `mail`) '
