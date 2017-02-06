@@ -146,14 +146,28 @@ def store(listid, nntpconn, msgno):
     if cur.execute(sql, (msgid,)) > 0:
         mailid = cur.fetchone()[0]
     else:
+        # parse mail
+        header = list()
+        body = list()
+        isbody = False
+
+        for line in msg.as_string().splitlines():
+            if isbody:
+                body.append(line)
+                continue
+            elif line.strip() == '':
+                isbody = True
+
+            header.append(line)
+
         sender = email.utils.parseaddr(msg.get('From'))
         senderid = lookup_person(*sender)
         sql = ('INSERT INTO `mail` '
                '(`message_id`, `subject`, `date`, `from`, `lines`, '
-               '`content`) '
-               'VALUES (%s, %s, %s, %s, %s, %s)')
+               '`header`, `content`) '
+               'VALUES (%s, %s, %s, %s, %s, %s, %s)')
         cur.execute(sql, (msgid, subject, date, senderid, lines,
-                          msg.as_string()))
+                          '\n'.join(header), '\n'.join(body)))
         mailid = cur.lastrowid
 
         # these contain lists  of realname, addr tuples
