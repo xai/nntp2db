@@ -41,9 +41,10 @@ def list_groups():
 
 
 def contains(listid, msgid):
-    sql = ('SELECT b.id FROM `mbox` b, `mail` m '
-           'WHERE b.id=%s '
-           'and m.id=b.id '
+    sql = ('SELECT b.id FROM `mbox` b, `mail` m, `list` l '
+           'WHERE l.id=%s '
+           'and b.list=l.id '
+           'and b.mail=m.id '
            'and m.message_id=%s '
            'LIMIT 1')
     if cur.execute(sql, (listid, msgid,)) > 0:
