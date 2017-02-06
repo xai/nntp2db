@@ -121,13 +121,13 @@ def lookup_person(name, address):
            'and `address` = %s '
            'LIMIT 1')
     if cur.execute(sql, (name, address)) > 0:
-        personid = int(cur.fetchone()[0])
+        personid = cur.fetchone()[0]
     else:
         sql = ('INSERT INTO `person` '
                '(`name`, `address`) '
                'VALUES (%s, %s)')
         cur.execute(sql, (name, address))
-        personid = int(cur.lastrowid)
+        personid = cur.lastrowid
 
     return personid
 
