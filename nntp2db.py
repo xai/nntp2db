@@ -133,6 +133,24 @@ def lookup_person(name, address):
     return personid
 
 
+def slice_mail(msg):
+    # parse mail
+    header = list()
+    body = list()
+    isbody = False
+
+    for line in msg.as_string().splitlines():
+        if isbody:
+            body.append(line)
+            continue
+        elif line.strip() == '':
+            isbody = True
+
+        header.append(line)
+
+    return header, body
+
+
 def store(listid, nntpconn, msgno):
     number, msgid, msg = get(nntpconn, msgno)
     msgid = msg.get('Message-Id')
@@ -146,19 +164,7 @@ def store(listid, nntpconn, msgno):
     if cur.execute(sql, (msgid,)) > 0:
         mailid = cur.fetchone()[0]
     else:
-        # parse mail
-        header = list()
-        body = list()
-        isbody = False
-
-        for line in msg.as_string().splitlines():
-            if isbody:
-                body.append(line)
-                continue
-            elif line.strip() == '':
-                isbody = True
-
-            header.append(line)
+        header, body = slice_mail(msg)
 
         sender = email.utils.parseaddr(msg.get('From'))
         senderid = lookup_person(*sender)
