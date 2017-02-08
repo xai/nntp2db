@@ -11,6 +11,8 @@ import nntplib
 import time
 import pymysql
 import traceback
+from dateutil import parser
+import pytz
 
 
 status = '0 %'
@@ -151,10 +153,21 @@ def slice_mail(msg):
     return header, body
 
 
+def parse_date(date):
+    dt = parser.parse(date)
+
+    if not dt.tzinfo:
+        dt = dt.replace(tzinfo=pytz.utc)
+
+    utc_date = dt.astimezone(pytz.utc).strftime('%Y-%m-%d %H:%M:%S')
+    utc_offset = dt.strftime('%z')
+    return utc_date, utc_offset
+
+
 def store(listid, nntpconn, msgno):
     number, msgid, msg = get(nntpconn, msgno)
     msgid = msg.get('Message-Id')
-    date = msg.get('Date')
+    msgdate = msg.get('Date')
     subject = msg.get('Subject')
     lines = msg.get('Lines')
 
@@ -168,11 +181,14 @@ def store(listid, nntpconn, msgno):
 
         sender = email.utils.parseaddr(msg.get('From'))
         senderid = lookup_person(*sender)
+        utc_date, tz = parse_date(msgdate)
+
         sql = ('INSERT INTO `mail` '
-               '(`message_id`, `subject`, `date`, `from`, `lines`, '
-               '`header`, `content`) '
-               'VALUES (%s, %s, %s, %s, %s, %s, %s)')
-        cur.execute(sql, (msgid, subject, date, senderid, lines,
+               '(`message_id`, `subject`, `date`, `timezone`, `from`, '
+               '`lines`, `header`, `content`) '
+               'VALUES (%s, %s, %s, %s, %s, %s, %s, %s)')
+        cur.execute(sql, (msgid, subject, utc_date,
+                          tz, senderid, lines,
                           '\n'.join(header), '\n'.join(body)))
         mailid = cur.lastrowid
 
