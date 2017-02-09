@@ -18,6 +18,7 @@ import pytz
 status = '0 %'
 attempts = 2  # number of attempts in case of temporary error
 aggressive = False
+keep_going = False
 
 db = pymysql.connect(host="localhost",
                      user="lists",
@@ -302,7 +303,10 @@ def download(group, dry_run, number=None, start=None, update=None):
 
         except:
             traceback.print_exc()
-            pass
+            if keep_going:
+                pass
+            else:
+                raise
 
     # actually retrieve the messages
     length = len(stack)
@@ -319,7 +323,10 @@ def download(group, dry_run, number=None, start=None, update=None):
             store(listid, nntpconn, msgno)
         except:
             traceback.print_exc()
-            pass
+            if keep_going:
+                pass
+            else:
+                raise
 
     nntpconn.quit()
 
