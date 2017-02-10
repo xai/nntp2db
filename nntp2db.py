@@ -169,7 +169,7 @@ def store(listid, nntpconn, msgno):
     number, msgid, msg = get(nntpconn, msgno)
     msgid = msg.get('Message-Id')
     msgdate = msg.get('Date')
-    subject = msg.get('Subject')
+    subject = msg.get('Subject')[:1023]
     lines = msg.get('Lines')
 
     sql = ('SELECT `id` from `mail` '
