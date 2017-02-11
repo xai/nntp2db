@@ -5,7 +5,7 @@ Store news from gmane into a mysql database
 This is still a pre-alpha-quality prototype
 
 ## TODO
-- [ ] Implement more robust parsing of dates
+- [ ] [Implement more robust parsing of dates](/../../issues/3)
 - [ ] [Incorporate references in design and implementation](/../../issues/1)
 - [ ] [Incorporate replies in design and implementation](/../../issues/2)
 
