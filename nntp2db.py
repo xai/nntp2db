@@ -184,7 +184,10 @@ def lookup_mail(msgid):
 
 
 def store(listid, nntpconn, msgno):
-    number, msgid, msg = get(nntpconn, msgno)
+    try:
+        number, msgid, msg = get(nntpconn, msgno)
+    except:
+        return
     msgid = msg.get('Message-Id')
     msgdate = msg.get('Date')
     subject = msg.get('Subject')[:1023]
