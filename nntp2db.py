@@ -155,7 +155,15 @@ def slice_mail(msg):
 
 
 def parse_date(date):
-    dt = parser.parse(date)
+    try:
+        dt = parser.parse(date)
+    except ValueError:
+        print('Unable to parse date: %s' % date)
+
+        if keep_going:
+            pass
+        else:
+            raise
 
     if not dt.tzinfo:
         dt = dt.replace(tzinfo=pytz.utc)
