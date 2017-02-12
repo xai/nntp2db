@@ -7,8 +7,8 @@ But if you are interested in this, feel free to contact us.
 
 ## TODO
 - [ ] [Implement more robust parsing of dates](/../../issues/3)
-- [ ] [Incorporate references in design and implementation](/../../issues/1)
-- [ ] [Incorporate replies in design and implementation](/../../issues/2)
+- [x] [Incorporate references in design and implementation](/../../issues/1)
+- [x] [Incorporate replies in design and implementation](/../../issues/2)
 
 ## Related Projects
 If you are looking to sync news into local mbox files, have a look at
