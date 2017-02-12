@@ -219,6 +219,22 @@ def store(listid, nntpconn, msgno):
                    'VALUES (%s, %s, %s, %s)')
             cur.execute(sql, (mailid, ccid, 0, 1))
 
+        # references and in-reply-to
+        in_reply_to = msg.get_all('in-reply-to', [])
+        references = msg.get_all('references', [])
+
+        for replyto in in_reply_to:
+            sql = ('INSERT INTO `in_reply_to` '
+                   '(`msg`, `replyto_message_id`) '
+                   'VALUES (%s, %s)')
+            cur.execute(sql, (mailid, replyto))
+
+        for ref in references:
+            sql = ('INSERT INTO `reference` '
+                   '(`from`, `to_message_id`) '
+                   'VALUES (%s, %s)')
+            cur.execute(sql, (mailid, ref))
+
     sql = ('INSERT INTO `mbox` '
            '(`list`, `mail`) '
            'VALUES (%s, %s)')
