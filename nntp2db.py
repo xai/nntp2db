@@ -156,7 +156,7 @@ def slice_mail(msg):
 
 def parse_date(date):
     try:
-        dt = parser.parse(date)
+        dt = parser.parse(date, fuzzy=True)
     except ValueError:
         print('Unable to parse date: %s' % date)
 
