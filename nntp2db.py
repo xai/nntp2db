@@ -231,18 +231,26 @@ def store(listid, nntpconn, msgno):
         references = msg.get('references')
 
         if in_reply_to:
-            for replyto in in_reply_to.split():
+            for replyto in in_reply_to.replace('><', '> <').split():
                 sql = ('INSERT INTO `in_reply_to` '
                        '(`mail`, `replyto_message_id`) '
                        'VALUES (%s, %s)')
-                cur.execute(sql, (mailid, replyto))
+                try:
+                    cur.execute(sql, (mailid, replyto))
+                except pymysql.err.DataError:
+                    print(sql % (mailid, replyto))
+                    raise
 
         if references:
-            for ref in references.split():
+            for ref in references.replace('><', '> <').split():
                 sql = ('INSERT INTO `reference` '
                        '(`from`, `to_message_id`) '
                        'VALUES (%s, %s)')
-                cur.execute(sql, (mailid, ref))
+                try:
+                    cur.execute(sql, (mailid, ref))
+                except pymysql.err.DataError:
+                    print(sql % (mailid, ref))
+                    raise
 
     sql = ('INSERT INTO `mbox` '
            '(`list`, `mail`) '
