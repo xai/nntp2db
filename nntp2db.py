@@ -173,6 +173,16 @@ def parse_date(date):
     return utc_date, utc_offset
 
 
+def lookup_mail(msgid):
+    sql = ('SELECT `id` from `mail` '
+           'WHERE `message_id`=%s')
+
+    if cur.execute(sql, (msgid,)) > 0:
+        return cur.fetchone()[0]
+    else:
+        return None
+
+
 def store(listid, nntpconn, msgno):
     number, msgid, msg = get(nntpconn, msgno)
     msgid = msg.get('Message-Id')
@@ -180,12 +190,9 @@ def store(listid, nntpconn, msgno):
     subject = msg.get('Subject')[:1023]
     lines = msg.get('Lines')
 
-    sql = ('SELECT `id` from `mail` '
-           'WHERE `message_id`=%s')
+    mailid = lookup_mail(msgid)
 
-    if cur.execute(sql, (msgid,)) > 0:
-        mailid = cur.fetchone()[0]
-    else:
+    if not mailid:
         header, body = slice_mail(msg)
 
         sender = email.utils.parseaddr(msg.get('From'))
@@ -220,20 +227,22 @@ def store(listid, nntpconn, msgno):
             cur.execute(sql, (mailid, ccid, 0, 1))
 
         # references and in-reply-to
-        in_reply_to = msg.get_all('in-reply-to', [])
-        references = msg.get_all('references', [])
+        in_reply_to = msg.get('in-reply-to')
+        references = msg.get('references')
 
-        for replyto in in_reply_to:
-            sql = ('INSERT INTO `in_reply_to` '
-                   '(`msg`, `replyto_message_id`) '
-                   'VALUES (%s, %s)')
-            cur.execute(sql, (mailid, replyto))
+        if in_reply_to:
+            for replyto in in_reply_to.split():
+                sql = ('INSERT INTO `in_reply_to` '
+                       '(`mail`, `replyto_message_id`) '
+                       'VALUES (%s, %s)')
+                cur.execute(sql, (mailid, replyto))
 
-        for ref in references:
-            sql = ('INSERT INTO `reference` '
-                   '(`from`, `to_message_id`) '
-                   'VALUES (%s, %s)')
-            cur.execute(sql, (mailid, ref))
+        if references:
+            for ref in references.split():
+                sql = ('INSERT INTO `reference` '
+                       '(`from`, `to_message_id`) '
+                       'VALUES (%s, %s)')
+                cur.execute(sql, (mailid, ref))
 
     sql = ('INSERT INTO `mbox` '
            '(`list`, `mail`) '
@@ -260,6 +269,36 @@ def initialize_list(group):
         listid = cur.lastrowid
 
     return listid
+
+
+def update_references():
+    sql = ('SELECT `id`, `to_message_id` from `reference` '
+           'WHERE `to` IS NULL')
+
+    if cur.execute(sql, ()) > 0:
+        fromid, msgid = cur.fetchone()
+        refid = lookup_mail(msgid)
+        if refid:
+            # message found in mail table
+            sql = ('UPDATE `reference` '
+                   'SET `to`=%s '
+                   'WHERE `from`=%s')
+            cur.execute(sql, (refid, fromid))
+
+
+def update_in_reply_to():
+    sql = ('SELECT `id`, `replyto_message_id` from `in_reply_to` '
+           'WHERE `replyto` IS NULL')
+
+    if cur.execute(sql, ()) > 0:
+        mailid, msgid = cur.fetchone()
+        replytoid = lookup_mail(msgid)
+        if replytoid:
+            # message found in mail table
+            sql = ('UPDATE `in_reply_to` '
+                   'SET `replyto`=%s '
+                   'WHERE `mail`=%s')
+            cur.execute(sql, (replytoid, mailid))
 
 
 def download(group, dry_run, number=None, start=None, update=None):
@@ -382,6 +421,10 @@ def main():
                         "--update",
                         help="retrieve only new messages",
                         action="store_true")
+    parser.add_argument("-r",
+                        "--update-references",
+                        help="only update references in database",
+                        action="store_true")
     parser.add_argument("groups", default="[]", nargs="*")
     args = parser.parse_args()
 
@@ -390,6 +433,12 @@ def main():
         return
 
     aggressive = args.aggressive
+
+    update_in_reply_to()
+    update_references()
+
+    if args.update_references:
+        return
 
     for group in args.groups:
         try:
@@ -401,6 +450,9 @@ def main():
         except:
             traceback.print_exc()
             pass
+
+    update_in_reply_to()
+    update_references()
 
 
 if __name__ == "__main__":
