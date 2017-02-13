@@ -195,6 +195,10 @@ def store(listid, nntpconn, msgno):
     except:
         return
     msgid = msg.get('Message-Id')
+
+    if contains(listid, msgid):
+        return
+
     msgdate = msg.get('Date')
     subject = msg.get('Subject')[:1023]
     lines = msg.get('Lines')
