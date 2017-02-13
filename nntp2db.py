@@ -13,6 +13,7 @@ import pymysql
 import traceback
 from dateutil import parser
 import pytz
+import re
 
 
 status = '0 %'
@@ -158,12 +159,17 @@ def parse_date(date):
     try:
         dt = parser.parse(date, fuzzy=True)
     except ValueError:
-        print('Unable to parse date: %s' % date)
+        try:
+            # handle wrong utc offset, e.g., '-700' instead of '-0700'
+            date = re.sub(r'([+-])([0-9]{3})$', r'\g<1>0\2', date)
+            dt = parser.parse(date, fuzzy=True)
+        except ValueError:
+            print('Unable to parse date: %s' % date)
 
-        if keep_going:
-            pass
-        else:
-            raise
+            if keep_going:
+                pass
+            else:
+                raise
 
     if not dt.tzinfo:
         dt = dt.replace(tzinfo=pytz.utc)
