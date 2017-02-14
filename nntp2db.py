@@ -25,6 +25,7 @@ db = pymysql.connect(host="localhost",
                      user="lists",
                      passwd="lists",
                      db="mailinglists",
+                     charset="utf8",
                      autocommit=True)
 cur = db.cursor()
 
