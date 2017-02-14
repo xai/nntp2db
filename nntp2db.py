@@ -7,13 +7,12 @@
 
 import argparse
 import email
+import email.policy
 import nntplib
 import time
 import pymysql
 import traceback
-from dateutil import parser
 import pytz
-import re
 
 
 status = '0 %'
@@ -99,7 +98,8 @@ def get(nntpconn, msgno):
         text += (line.decode('ascii', 'ignore')) + "\n"
 
     log('nntp', 'GET', info.number, msgno, info.message_id)
-    return(info.number, info.message_id, email.message_from_string(text))
+    return(info.number, info.message_id,
+           email.message_from_string(text, policy=email.policy.default))
 
 
 def check(listid, nntpconn, msgno, update):
@@ -156,21 +156,8 @@ def slice_mail(msg):
     return header, body
 
 
-def parse_date(date):
-    try:
-        dt = parser.parse(date, fuzzy=True)
-    except ValueError:
-        try:
-            # handle wrong utc offset, e.g., '-700' instead of '-0700'
-            date = re.sub(r'([+-])([0-9]{3})$', r'\g<1>0\2', date)
-            dt = parser.parse(date, fuzzy=True)
-        except ValueError:
-            print('Unable to parse date: %s' % date)
-
-            if keep_going:
-                pass
-            else:
-                raise
+def parse_date(msg):
+    dt = msg.get('Date').datetime
 
     if not dt.tzinfo:
         dt = dt.replace(tzinfo=pytz.utc)
@@ -200,7 +187,6 @@ def store(listid, nntpconn, msgno):
     if contains(listid, msgid):
         return
 
-    msgdate = msg.get('Date')
     subject = msg.get('Subject')[:1023]
     lines = msg.get('Lines')
 
@@ -211,7 +197,8 @@ def store(listid, nntpconn, msgno):
 
         sender = email.utils.parseaddr(msg.get('From'))
         senderid = lookup_person(*sender)
-        utc_date, tz = parse_date(msgdate)
+
+        utc_date, tz = parse_date(msg)
 
         sql = ('INSERT INTO `mail` '
                '(`message_id`, `subject`, `date`, `timezone`, `from`, '
