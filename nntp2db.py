@@ -20,6 +20,7 @@ status = '0 %'
 attempts = 2  # number of attempts in case of temporary error
 aggressive = False
 keep_going = False
+quiet = False
 config = json.load(open('config.json'))
 
 db = pymysql.connect(host=config['host'],
@@ -32,8 +33,9 @@ cur = db.cursor()
 
 
 def log(target, action, number, msgno, msgid):
-    print('%5s | %-4s | %-5s | %d(%s): %s' % (status, target, action, number,
-                                              msgno, msgid))
+    if not quiet:
+        print('%5s | %-4s | %-5s | %d(%s): %s' % (status, target, action,
+                                                  number, msgno, msgid))
 
 
 def list_groups():
@@ -407,6 +409,8 @@ def download(group, dry_run, number=None, start=None, update=None):
 
 def main():
     global aggressive
+    global quiet
+
     parser = argparse.ArgumentParser()
     parser.add_argument("-a",
                         "--aggressive",
@@ -436,6 +440,10 @@ def main():
                         "--update-references",
                         help="only update references in database",
                         action="store_true")
+    parser.add_argument("-q",
+                        "--quiet",
+                        help="Reduce output on stdout",
+                        action="store_true")
     parser.add_argument("groups", default="[]", nargs="*")
     args = parser.parse_args()
 
@@ -444,6 +452,7 @@ def main():
         return
 
     aggressive = args.aggressive
+    quiet = args.quiet
 
     update_in_reply_to()
     update_references()
