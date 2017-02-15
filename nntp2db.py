@@ -409,6 +409,7 @@ def download(group, dry_run, number=None, start=None, update=None):
 
 def main():
     global aggressive
+    global keep_going
     global quiet
 
     parser = argparse.ArgumentParser()
@@ -424,6 +425,10 @@ def main():
                         "--number",
                         help="Fetch the n most recent messages",
                         type=int)
+    parser.add_argument("-k",
+                        "--keep-going",
+                        help="Keep going in case of errors",
+                        action="store_true")
     parser.add_argument("-l",
                         "--list-groups",
                         help="list all available groups and exit",
@@ -452,6 +457,7 @@ def main():
         return
 
     aggressive = args.aggressive
+    keep_going = args.keep_going
     quiet = args.quiet
 
     update_in_reply_to()
