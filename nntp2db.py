@@ -8,12 +8,12 @@
 import argparse
 import email
 import email.policy
-import nntplib
-import time
-import pymysql
-import traceback
-import pytz
 import json
+import nntplib
+import pymysql
+import pytz
+import time
+import traceback
 
 
 status = '0 %'
