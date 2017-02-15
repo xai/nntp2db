@@ -9,6 +9,7 @@ import argparse
 import email
 import email.policy
 import json
+import logging
 import nntplib
 import pymysql
 import pytz
@@ -16,6 +17,19 @@ import time
 import traceback
 
 
+""" Logging setup """
+logging.basicConfig(filename='nntp2db.log', level=logging.WARNING)
+console = logging.StreamHandler()
+console.setLevel(logging.INFO)
+
+# set a format which is simpler for console use
+formatter = logging.Formatter('%(name)-12s: %(levelname)-8s %(message)s')
+# tell the handler to use this format
+console.setFormatter(formatter)
+# add the handler to the root logger
+logging.getLogger('').addHandler(console)
+
+""" General setup """
 status = '0 %'
 attempts = 2  # number of attempts in case of temporary error
 aggressive = False
@@ -32,7 +46,7 @@ db = pymysql.connect(host=config['host'],
 cur = db.cursor()
 
 
-def log(target, action, number, msgno, msgid):
+def print_status(target, action, number, msgno, msgid):
     if not quiet:
         print('%5s | %-4s | %-5s | %d(%s): %s' % (status, target, action,
                                                   number, msgno, msgid))
@@ -66,18 +80,20 @@ def stat(nntpconn, msgno):
         try:
             resp, number, msgid = nntpconn.stat(str(msgno))
         except nntplib.NNTPTemporaryError:
-            print('%d: Temporary error. Sleep 5 seconds and retry.' % msgno)
+            logging.warn('%d: Temporary error. Sleep 5 seconds and retry.'
+                         % msgno)
             if not aggressive:
                 time.sleep(5)
             pass
         else:
             break
     else:
-        print('%d: Failed to stat after %d attempts' % (msgno, attempts))
+        logging.warn('%d: Failed to stat after %d attempts'
+                     % (msgno, attempts))
         raise Exception('%d: Failed to stat after %d attempts'
                         % (msgno, attempts))
 
-    log('nntp', 'STAT', number, msgno, msgid)
+    print_status('nntp', 'STAT', number, msgno, msgid)
     return number, msgid
 
 
@@ -86,14 +102,16 @@ def get(nntpconn, msgno):
         try:
             resp, info = nntpconn.article(str(msgno))
         except nntplib.NNTPTemporaryError:
-            print('%d: Temporary error. Sleep 5 seconds and retry.' % msgno)
+            logging.warn('%d: Temporary error. Sleep 5 seconds and retry.'
+                         % msgno)
             if not aggressive:
                 time.sleep(5)
             pass
         else:
             break
     else:
-        print('%d: Failed to download after %d attempts' % (msgno, attempts))
+        logging.warn('%d: Failed to download after %d attempts'
+                     % (msgno, attempts))
         raise Exception('%d: Failed to download after %d attempts'
                         % (msgno, attempts))
 
@@ -101,7 +119,7 @@ def get(nntpconn, msgno):
     for line in info.lines:
         text += (line.decode('ascii', 'ignore')) + "\n"
 
-    log('nntp', 'GET', info.number, msgno, info.message_id)
+    print_status('nntp', 'GET', info.number, msgno, info.message_id)
     return(info.number, info.message_id,
            email.message_from_string(text, policy=email.policy.default))
 
@@ -121,7 +139,7 @@ def check(listid, nntpconn, msgno, update):
         queue = False
         action = 'SKIP'
 
-    log('db', action, number, msgno, msgid)
+    print_status('db', action, number, msgno, msgid)
     return queue
 
 
@@ -186,6 +204,7 @@ def store(listid, nntpconn, msgno):
         number, msgid, msg = get(nntpconn, msgno)
     except:
         return
+
     msgid = msg.get('Message-Id')
 
     if contains(listid, msgid):
@@ -199,10 +218,19 @@ def store(listid, nntpconn, msgno):
     if not mailid:
         header, body = slice_mail(msg)
 
-        sender = email.utils.parseaddr(msg.get('From'))
+        try:
+            sender = email.utils.parseaddr(msg.get('From'))
+        except:
+            logging.warn('Message:\n' + 80 * '-' + msg.as_string() + 80 * '-')
+            raise
+
         senderid = lookup_person(*sender)
 
         utc_date, tz = parse_date(msg)
+
+        # these contain lists  of realname, addr tuples
+        tos = msg.get_all('to', [])
+        ccs = msg.get_all('cc', [])
 
         sql = ('INSERT INTO `mail` '
                '(`message_id`, `subject`, `date`, `timezone`, `from`, '
@@ -212,10 +240,6 @@ def store(listid, nntpconn, msgno):
                           tz, senderid, lines,
                           '\n'.join(header), '\n'.join(body)))
         mailid = cur.lastrowid
-
-        # these contain lists  of realname, addr tuples
-        tos = msg.get_all('to', [])
-        ccs = msg.get_all('cc', [])
 
         for to in email.utils.getaddresses(tos):
             toid = lookup_person(*to)
@@ -243,7 +267,7 @@ def store(listid, nntpconn, msgno):
                 try:
                     cur.execute(sql, (mailid, replyto))
                 except pymysql.err.DataError:
-                    print(sql % (mailid, replyto))
+                    logging.warn(sql % (mailid, replyto))
                     raise
 
         if references:
@@ -254,7 +278,7 @@ def store(listid, nntpconn, msgno):
                 try:
                     cur.execute(sql, (mailid, ref))
                 except pymysql.err.DataError:
-                    print(sql % (mailid, ref))
+                    logging.warn(sql % (mailid, ref))
                     raise
 
     sql = ('INSERT INTO `mbox` '
@@ -264,7 +288,7 @@ def store(listid, nntpconn, msgno):
 
     action = 'STORE'
 
-    log('mbox', action, number, msgno, msgid)
+    print_status('mbox', action, number, msgno, msgid)
 
 
 def initialize_list(group):
@@ -352,9 +376,9 @@ def download(group, dry_run, number=None, start=None, update=None):
             startnr = max(startnr, last - number)
 
     if not start:
-        print('No start message provided, starting at %d' % startnr)
+        logging.info('No start message provided, starting at %d' % startnr)
 
-    print("Checking messages %d to %d." % (startnr, last))
+    logging.info("Checking messages %d to %d." % (startnr, last))
 
     stack = []
 
@@ -362,11 +386,11 @@ def download(group, dry_run, number=None, start=None, update=None):
     for msgno in reversed(range(startnr, last + 1)):
         try:
             if not aggressive and (msgno % 1000 == 0) and (msgno != startnr):
-                print('%d: Sleep 30 seconds' % msgno)
+                logging.info('%d: Sleep 30 seconds' % msgno)
                 time.sleep(30)
 
             if dry_run:
-                print('Dry-run: download message no. %d' % msgno)
+                logging.info('Dry-run: download message no. %d' % msgno)
                 continue
 
             status = str(int(100 * (last - msgno) / (last - startnr))) + ' %'
@@ -374,11 +398,11 @@ def download(group, dry_run, number=None, start=None, update=None):
             if check(listid, nntpconn, msgno, update):
                 stack.append(msgno)
             else:
-                print('Found a message that is already in the mbox.')
+                logging.info('Found a message that is already in the mbox.')
                 break
 
-        except:
-            traceback.print_exc()
+        except Exception as e:
+            logging.exception("queue")
             if keep_going:
                 pass
             else:
@@ -388,7 +412,7 @@ def download(group, dry_run, number=None, start=None, update=None):
     length = len(stack)
     count = 0
 
-    print("Retrieving %d messages." % length)
+    logging.info("Retrieving %d messages." % length)
 
     while stack:
         count += 1
@@ -397,8 +421,8 @@ def download(group, dry_run, number=None, start=None, update=None):
 
         try:
             store(listid, nntpconn, msgno)
-        except:
-            traceback.print_exc()
+        except Exception as e:
+            logging.exception("retrieve")
             if keep_going:
                 pass
             else:
@@ -409,6 +433,7 @@ def download(group, dry_run, number=None, start=None, update=None):
 
 def main():
     global aggressive
+    global console
     global keep_going
     global quiet
 
@@ -433,6 +458,10 @@ def main():
                         "--list-groups",
                         help="list all available groups and exit",
                         action="store_true")
+    parser.add_argument("--log",
+                        help="set log level",
+                        type=str,
+                        default="warning")
     parser.add_argument("-s",
                         "--start",
                         help="First message in range",
@@ -459,6 +488,11 @@ def main():
     aggressive = args.aggressive
     keep_going = args.keep_going
     quiet = args.quiet
+
+    numeric_level = getattr(logging, args.log.upper(), None)
+    if not isinstance(numeric_level, int):
+            raise ValueError('Invalid log level: %s' % args.log)
+    console.setLevel(numeric_level)
 
     update_in_reply_to()
     update_references()
