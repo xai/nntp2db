@@ -13,19 +13,21 @@ import time
 import pymysql
 import traceback
 import pytz
+import json
 
 
 status = '0 %'
 attempts = 2  # number of attempts in case of temporary error
 aggressive = False
 keep_going = False
+config = json.load(open('config.json'))
 
-db = pymysql.connect(host="localhost",
-                     user="lists",
-                     passwd="lists",
-                     db="mailinglists",
-                     charset="utf8",
-                     autocommit=True)
+db = pymysql.connect(host=config['host'],
+                     user=config['user'],
+                     passwd=config['passwd'],
+                     db=config['db'],
+                     charset=config['charset'],
+                     autocommit=config['autocommit'])
 cur = db.cursor()
 
 
