@@ -93,3 +93,4 @@ config.json
 
 # vim
 *.swp
+*.bak
