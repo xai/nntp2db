@@ -18,7 +18,7 @@ import traceback
 
 
 """ Logging setup """
-logging.basicConfig(filename='nntp2db.log', level=logging.WARNING)
+logging.basicConfig(filename='nntp2db.log', level=logging.DEBUG)
 console = logging.StreamHandler()
 console.setLevel(logging.INFO)
 
@@ -115,13 +115,8 @@ def get(nntpconn, msgno):
         raise Exception('%d: Failed to download after %d attempts'
                         % (msgno, attempts))
 
-    text = str()
-    for line in info.lines:
-        text += (line.decode('ascii', 'ignore')) + "\n"
-
     print_status('nntp', 'GET', info.number, msgno, info.message_id)
-    return(info.number, info.message_id,
-           email.message_from_string(text, policy=email.policy.default))
+    return(info.number, info.message_id, info.lines)
 
 
 def check(listid, nntpconn, msgno, update):
@@ -160,22 +155,22 @@ def lookup_person(name, address):
     return personid
 
 
-def slice_mail(msg):
+def slice_mail(lines):
     # parse mail
     header = list()
     body = list()
     isbody = False
 
-    for line in msg.as_string().splitlines():
+    for line in lines:
         if isbody:
             body.append(line)
             continue
-        elif line.strip() == '':
+        elif line == b'':
             isbody = True
 
         header.append(line)
 
-    return header, body
+    return b'\r\n'.join(header), b'\r\n'.join(body)
 
 
 def parse_date(msg):
@@ -199,13 +194,9 @@ def lookup_mail(msgid):
         return None
 
 
-def store(listid, nntpconn, msgno):
-    try:
-        number, msgid, msg = get(nntpconn, msgno)
-    except:
-        return
-
+def store(listid, nntp_msgid, msg, header, body):
     msgid = msg.get('Message-Id')
+    assert nntp_msgid == msgid
 
     if contains(listid, msgid):
         return
@@ -216,14 +207,7 @@ def store(listid, nntpconn, msgno):
     mailid = lookup_mail(msgid)
 
     if not mailid:
-        header, body = slice_mail(msg)
-
-        try:
-            sender = email.utils.parseaddr(msg.get('From'))
-        except:
-            logging.warn('Message:\n' + 80 * '-' + msg.as_string() + 80 * '-')
-            raise
-
+        sender = email.utils.parseaddr(msg.get('From'))
         senderid = lookup_person(*sender)
 
         utc_date, tz = parse_date(msg)
@@ -238,7 +222,8 @@ def store(listid, nntpconn, msgno):
                'VALUES (%s, %s, %s, %s, %s, %s, %s, %s)')
         cur.execute(sql, (msgid, subject, utc_date,
                           tz, senderid, lines,
-                          '\n'.join(header), '\n'.join(body)))
+                          header.decode('ascii', 'ignore'),
+                          body.decode('ascii', 'ignore')))
         mailid = cur.lastrowid
 
         for to in email.utils.getaddresses(tos):
@@ -285,10 +270,6 @@ def store(listid, nntpconn, msgno):
            '(`list`, `mail`) '
            'VALUES (%s, %s)')
     cur.execute(sql, (listid, mailid))
-
-    action = 'STORE'
-
-    print_status('mbox', action, number, msgno, msgid)
 
 
 def initialize_list(group):
@@ -411,6 +392,7 @@ def download(group, dry_run, number=None, start=None, update=None):
     # actually retrieve the messages
     length = len(stack)
     count = 0
+    failcount = 0
 
     logging.info("Retrieving %d messages." % length)
 
@@ -420,15 +402,34 @@ def download(group, dry_run, number=None, start=None, update=None):
         msgno = stack.pop()
 
         try:
-            store(listid, nntpconn, msgno)
+            # retrieve message from nntp server
+            number, msgid, lines = get(nntpconn, msgno)
+        except:
+            pass
+
+        header, body = slice_mail(lines)
+        try:
+            # parse message and insert into database
+            msg = email.message_from_bytes(header + body,
+                                           policy=email.policy.default)
+            print_status('mbox', "STORE", number, msgno, msgid)
+            store(listid, msgid, msg, header, body)
         except Exception as e:
+            failcount += 1
+            logging.debug('Message:\n' + 80 * '-' + '\n'
+                          + (header + body).decode('ascii', 'ignore') + '\n'
+                          + 80 * '-')
             logging.exception("retrieve")
             if keep_going:
+                print_status('mbox', "FAIL", number, msgno, msgid)
                 pass
             else:
                 raise
 
     nntpconn.quit()
+    if failcount > 0:
+        logging.info('%d messages (%d%%) could not be imported due to defects.'
+                     % (failcount, int(100 * failcount / count)))
 
 
 def main():
