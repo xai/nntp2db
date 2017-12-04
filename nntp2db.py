@@ -76,45 +76,13 @@ def contains(listid, msgid):
 
 
 def stat(nntpconn, msgno):
-    for attempt in range(attempts):
-        try:
-            resp, number, msgid = nntpconn.stat(str(msgno))
-        except nntplib.NNTPTemporaryError:
-            logging.warn('%d: Temporary error. Sleep 5 seconds and retry.'
-                         % msgno)
-            if not aggressive:
-                time.sleep(5)
-            pass
-        else:
-            break
-    else:
-        logging.warn('%d: Failed to stat after %d attempts'
-                     % (msgno, attempts))
-        raise Exception('%d: Failed to stat after %d attempts'
-                        % (msgno, attempts))
-
+    resp, number, msgid = nntpconn.stat(str(msgno))
     print_status('nntp', 'STAT', number, msgno, msgid)
     return number, msgid
 
 
 def get(nntpconn, msgno):
-    for attempt in range(attempts):
-        try:
-            resp, info = nntpconn.article(str(msgno))
-        except nntplib.NNTPTemporaryError:
-            logging.warn('%d: Temporary error. Sleep 5 seconds and retry.'
-                         % msgno)
-            if not aggressive:
-                time.sleep(5)
-            pass
-        else:
-            break
-    else:
-        logging.warn('%d: Failed to download after %d attempts'
-                     % (msgno, attempts))
-        raise Exception('%d: Failed to download after %d attempts'
-                        % (msgno, attempts))
-
+    resp, info = nntpconn.article(str(msgno))
     print_status('nntp', 'GET', info.number, msgno, info.message_id)
     return(info.number, info.message_id, info.lines)
 
@@ -382,6 +350,8 @@ def download(group, dry_run, number=None, start=None, update=None):
                 logging.info('Found a message that is already in the mbox.')
                 break
 
+        except nntplib.NNTPTemporaryError:
+            pass
         except Exception as e:
             logging.exception("queue")
             if keep_going:
