@@ -88,22 +88,9 @@ def get(nntpconn, msgno):
 
 
 def check(listid, nntpconn, msgno, update):
+    number, msgid = stat(nntpconn, msgno)
 
-    if update:
-        number, msgid = stat(nntpconn, msgno)
-    else:
-        number = msgno
-        msgid = 'unknown msg-id'
-
-    if not update or not contains(listid, msgid):
-        queue = True
-        action = 'QUEUE'
-    else:
-        queue = False
-        action = 'SKIP'
-
-    print_status('db', action, number, msgno, msgid)
-    return queue
+    return not contains(listid, msgid)
 
 
 def lookup_person(name, address):
@@ -305,8 +292,7 @@ def download(group, dry_run, number=None, start=None, update=None):
     nntpconn = nntplib.NNTP('news.gmane.org')
 
     resp, count, first, last, name = nntpconn.group(group)
-    print(
-        'Group %s has %d articles, range %d to %d' %
+    logging.info('Group %s has %d articles, range %d to %d' %
         (name, count, first, last))
 
     last = int(last)
@@ -316,48 +302,44 @@ def download(group, dry_run, number=None, start=None, update=None):
         startnr = min(startnr, last)
 
         if number:
-            last = min(startnr + number, last)
+            last = min(startnr + number - 1, last)
 
     else:
         startnr = first
 
-        if number:
+        if number and not update:
             startnr = max(startnr, last - number)
 
-    if not start:
-        logging.info('No start message provided, starting at %d' % startnr)
-
-    logging.info("Checking messages %d to %d." % (startnr, last))
-
-    stack = []
-
-    # Check which messages need to be retrieved
-    for msgno in reversed(range(startnr, last + 1)):
-        try:
-            if not aggressive and (msgno % 1000 == 0) and (msgno != startnr):
-                logging.info('%d: Sleep 30 seconds' % msgno)
-                time.sleep(30)
-
-            if dry_run:
-                logging.info('Dry-run: download message no. %d' % msgno)
-                continue
-
-            status = str(int(100 * (last - msgno) / (last - startnr))) + ' %'
-
-            if check(listid, nntpconn, msgno, update):
-                stack.append(msgno)
-            else:
-                logging.info('Found a message that is already in the mbox.')
-                break
-
-        except nntplib.NNTPTemporaryError:
-            pass
-        except Exception as e:
-            logging.exception("queue")
-            if keep_going:
+    if update:
+        logging.info("Checking messages %d to %d whether they need to be retrieved."
+              % (startnr, last))
+        # Check which messages need to be retrieved
+        lo = startnr
+        hi = last
+        while lo < hi:
+            mid = (lo+hi)//2
+            try:
+                if check(listid, nntpconn, msgno, update):
+                    # msg is new
+                    hi = mid
+                else:
+                    # msg already in the mbox
+                    lo = mid+1
+            except nntplib.NNTPTemporaryError:
                 pass
-            else:
-                raise
+            except:
+                logging.exception("queue")
+                if keep_going:
+                    pass
+                else:
+                    raise
+
+        startnr = lo
+        if number:
+            last = min(startnr + number - 1, last)
+
+    logging.info("First to fetch: %d" % startnr)
+    logging.info("Last to fetch: %d" % last)
 
     # actually retrieve the messages
     length = len(stack)
@@ -366,10 +348,9 @@ def download(group, dry_run, number=None, start=None, update=None):
 
     logging.info("Retrieving %d messages." % length)
 
-    while stack:
+    for msgno in range(startnr, last + 1):
         count += 1
         status = str(int(100 * count / length)) + ' %'
-        msgno = stack.pop()
 
         try:
             # retrieve message from nntp server
